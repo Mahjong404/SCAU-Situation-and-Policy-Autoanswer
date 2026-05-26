@@ -88,13 +88,10 @@ def _best_match(target: str, candidates: list[str]) -> str | None:
     for c in candidates:
         if c == target:
             return c
-        # 子串包含：如"核心技术"在"关键核心技术"中
-        if target in c or c in target:
-            return c
         ratio = SequenceMatcher(None, c, target).ratio()
         if ratio > best_ratio:
             best_ratio, best = ratio, c
-    return best if best_ratio >= 0.75 else None
+    return best if best_ratio >= 0.85 else None
 
 
 async def _click_correct_options(page: Page, qb, decoder,
