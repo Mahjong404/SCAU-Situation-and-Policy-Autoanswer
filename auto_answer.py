@@ -82,32 +82,57 @@ def _get_target_texts(matched: dict) -> set[str]:
     return {letter_to_text.get(l, "") for l in target_letters} - {""}
 
 
+def _best_match(target: str, candidates: list[str]) -> str | None:
+    """模糊匹配，返回 candidates 中与 target 最相似的项"""
+    best, best_ratio = None, 0
+    for c in candidates:
+        if c == target:
+            return c
+        # 子串包含：如"核心技术"在"关键核心技术"中
+        if target in c or c in target:
+            return c
+        ratio = SequenceMatcher(None, c, target).ratio()
+        if ratio > best_ratio:
+            best_ratio, best = ratio, c
+    return best if best_ratio >= 0.75 else None
+
+
 async def _click_correct_options(page: Page, qb, decoder,
                                   target_texts: set[str], multi: bool) -> int:
     """点击正确选项，multi=True 时点击全部匹配。返回点击数"""
     option_els = qb.locator("ul.Zy_ulTop li")
     count = await option_els.count()
-    clicked = 0
+    decoded_opts = []
     for i in range(count):
         li = option_els.nth(i)
         a_el = li.locator("a.fl.after")
         a_text_raw = await a_el.text_content() if await a_el.count() > 0 else await li.text_content()
-        a_text_decoded = decoder(a_text_raw).strip()
+        decoded_opts.append(decoder(a_text_raw).strip())
 
-        if a_text_decoded in target_texts:
+    matched_opts = []
+    for target in target_texts:
+        match = _best_match(target, decoded_opts)
+        if match:
+            matched_opts.append(match)
+
+    clicked = 0
+    for i, opt in enumerate(decoded_opts):
+        if opt in matched_opts:
+            li = option_els.nth(i)
             checked = await li.get_attribute("aria-checked")
             if checked != "true":
                 await li.click()
                 await page.wait_for_timeout(300)
-                print(f"  已点击: {a_text_decoded}")
+                print(f"  已点击: {opt}")
                 clicked += 1
                 if not multi:
                     return clicked
             else:
-                print(f"  已选中(跳过): {a_text_decoded}")
+                print(f"  已选中(跳过): {opt}")
                 if not multi:
                     return clicked
                 clicked += 1
+
     return clicked
 
 
