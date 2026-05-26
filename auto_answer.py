@@ -9,6 +9,7 @@ from playwright.async_api import Page
 
 BASE_DIR = Path(__file__).parent
 QUESTION_PATH = BASE_DIR / "data" / "questions.json"
+FUZZY_LOG_PATH = BASE_DIR / "fuzzy_matches.txt"
 
 _old_cwd = os.getcwd()
 os.chdir(str(BASE_DIR))
@@ -51,21 +52,19 @@ def _normalize(s: str) -> str:
     return s
 
 
-def _match_question(question_bank: list, q_key: str) -> dict | None:
-    """匹配题库，使用模糊匹配应对文本细微差异"""
-    best = None
-    best_ratio = 0
+def _match_question(question_bank: list, q_key: str) -> tuple:
+    """返回 (题目, 是否模糊匹配, 相似度)"""
+    best, best_ratio = None, 0
     for q in question_bank:
         q_norm = _normalize(q.get("question", ""))
         if q_norm == q_key:
-            return q
+            return q, False, 1.0
         ratio = SequenceMatcher(None, q_norm, q_key).ratio()
         if ratio > best_ratio:
-            best_ratio = ratio
-            best = q
+            best_ratio, best = ratio, q
     if best_ratio >= 0.92:
-        return best
-    return None
+        return best, True, best_ratio
+    return None, False, best_ratio
 
 
 def _get_target_texts(matched: dict) -> set[str]:
@@ -83,9 +82,12 @@ def _get_target_texts(matched: dict) -> set[str]:
     return {letter_to_text.get(l, "") for l in target_letters} - {""}
 
 
-async def _click_correct_option(page: Page, qb, decoder, target_texts: set[str]) -> bool:
+async def _click_correct_options(page: Page, qb, decoder,
+                                  target_texts: set[str], multi: bool) -> int:
+    """点击正确选项，multi=True 时点击全部匹配。返回点击数"""
     option_els = qb.locator("ul.Zy_ulTop li")
     count = await option_els.count()
+    clicked = 0
     for i in range(count):
         li = option_els.nth(i)
         a_el = li.locator("a.fl.after")
@@ -98,17 +100,21 @@ async def _click_correct_option(page: Page, qb, decoder, target_texts: set[str])
                 await li.click()
                 await page.wait_for_timeout(300)
                 print(f"  已点击: {a_text_decoded}")
+                clicked += 1
+                if not multi:
+                    return clicked
             else:
                 print(f"  已选中(跳过): {a_text_decoded}")
-            return True
-    return False
+                if not multi:
+                    return clicked
+                clicked += 1
+    return clicked
 
 
 async def answer(page: Page) -> None:
     with open(QUESTION_PATH, "r", encoding="utf-8") as f:
         question_bank = json.load(f)
 
-    # 逐层等待 iframe 加载
     f1 = page.frame_locator("iframe").first
     await f1.locator("iframe").first.wait_for(state="attached", timeout=30000)
 
@@ -118,7 +124,6 @@ async def answer(page: Page) -> None:
     deep = f2.frame_locator("iframe").first
     await deep.locator(".TiMu").first.wait_for(state="visible", timeout=30000)
 
-    # 构建字体解码器
     ttf_b64 = None
     for frame in page.frames:
         try:
@@ -134,11 +139,11 @@ async def answer(page: Page) -> None:
         font_bytes = base64.b64decode(ttf_b64)
         decoder = _build_decoder(translate(font_bytes))
 
-    # 遍历所有题目
     question_blocks = deep.locator(".TiMu")
     total = await question_blocks.count()
     print(f"共 {total} 道题\n")
 
+    fuzzy_log = []
     answered = 0
     for i in range(total):
         qb = question_blocks.nth(i)
@@ -154,12 +159,20 @@ async def answer(page: Page) -> None:
         question_decoded = decoder(question_raw).strip()
         q_key = _normalize(question_decoded)
 
-        matched = _match_question(question_bank, q_key)
+        matched, is_fuzzy, ratio = _match_question(question_bank, q_key)
         if not matched:
-            preview = question_decoded.strip()[:60]
+            preview = question_decoded[:60]
             print(f"[{i+1}] 未匹配: {preview}...")
             print("题库无此题，退出答题。")
             return
+
+        if is_fuzzy:
+            q_norm = _normalize(matched.get("question", ""))
+            fuzzy_log.append(
+                f"[{i+1}] {matched['type']} ratio={ratio:.3f}\n"
+                f"  页面: {q_key}\n"
+                f"  题库: {q_norm}\n"
+            )
 
         print(f"[{i+1}] {matched['type']} answer={matched['answer']}")
 
@@ -168,26 +181,23 @@ async def answer(page: Page) -> None:
             print("  无目标选项")
             continue
 
-        ok = await _click_correct_option(page, qb, decoder, target_texts)
-        if ok:
-            answered += 1
+        multi = matched["type"] == "多选题"
+        clicked = await _click_correct_options(page, qb, decoder, target_texts, multi)
+        answered += clicked
 
     print(f"\n已回答 {answered}/{total} 题")
 
-    # 退出 iframe，查找"暂时保存"按钮（可能在主页面或外层 iframe 中）
-    await page.wait_for_timeout(500)
-    found = False
-    for scope in [page] + page.frames:
-        try:
-            btn = scope.locator("a:has-text('暂时保存'), button:has-text('暂时保存')").first
-            if await btn.count() > 0 and await btn.is_visible():
-                await btn.click(timeout=5000)
-                print("已点击: 暂时保存")
-                found = True
-                break
-        except Exception:
-            continue
-    if not found:
-        print("未找到「暂时保存」按钮，可能无需保存")
+    if fuzzy_log:
+        with open(FUZZY_LOG_PATH, "w", encoding="utf-8") as f:
+            f.write("=== 模糊匹配题目（请核验）===\n\n")
+            f.write("\n".join(fuzzy_log))
+        print(f"模糊匹配 {len(fuzzy_log)} 题，已写入 {FUZZY_LOG_PATH}")
+
+    save_btn = deep.locator("#tempsave")
+    if await save_btn.count() > 0:
+        await save_btn.click()
+        print("已点击: 暂时保存")
+    else:
+        print("未找到「暂时保存」按钮")
 
     print("\n答题完成。")
