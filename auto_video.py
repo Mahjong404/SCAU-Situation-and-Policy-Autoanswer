@@ -1,6 +1,91 @@
 from playwright.async_api import Page, TimeoutError
 
 
+def is_double_speed_text(text: str | None) -> bool:
+    text = (text or "").strip().lower().replace(" ", "")
+    return text in {"2x", "2.0x", "2倍", "2.0倍"}
+
+
+def video_complete_message(label: str | None) -> str:
+    label = (label or "").strip()
+    return f"已完成{label}视频播放" if label else "已完成视频播放"
+
+
+async def _set_double_speed(player) -> bool:
+    speed_btn = player.locator("button.vjs-playback-rate, .vjs-playback-rate").first
+    try:
+        await speed_btn.wait_for(state="visible", timeout=5000)
+        await speed_btn.hover()
+    except TimeoutError:
+        print("未找到播放速度按钮")
+        return False
+
+    menu_items = player.locator(".vjs-menu-item, [role='menuitem'], [role='menuitemradio']")
+    count = await menu_items.count()
+    for i in range(count):
+        item = menu_items.nth(i)
+        text = await item.text_content()
+        if is_double_speed_text(text):
+            await item.click(timeout=3000)
+            print("已设置: 2倍速")
+            return True
+
+    print("未找到2倍速选项")
+    return False
+
+
+async def _mute_player(player) -> bool:
+    mute_btn = player.locator("button.vjs-mute-control").first
+    try:
+        await mute_btn.wait_for(state="visible", timeout=5000)
+    except TimeoutError:
+        print("未找到静音按钮")
+        return False
+
+    title = await mute_btn.get_attribute("title")
+    class_name = await mute_btn.get_attribute("class")
+    if title == "取消静音" or "vjs-vol-0" in (class_name or ""):
+        print("已是静音状态")
+        return True
+
+    await mute_btn.click()
+    print("已设置: 静音")
+    return True
+
+
+async def _configure_player(player) -> None:
+    await _set_double_speed(player)
+    await _mute_player(player)
+
+
+async def play_player(player, timeout: int = 1_750_000, label: str | None = None) -> bool:
+    """播放一个视频播放器 iframe。返回 True 表示检测到并处理了播放器。"""
+    play_btn = player.locator(".vjs-big-play-button")
+    ended = player.locator(".vjs-ended")
+
+    try:
+        await play_btn.first.wait_for(state="visible", timeout=5000)
+        await play_btn.first.click()
+        print("视频开始播放")
+        await _configure_player(player)
+    except TimeoutError:
+        try:
+            await ended.first.wait_for(state="attached", timeout=3000)
+            print("视频已完成")
+            return True
+        except TimeoutError:
+            print("未检测到视频播放器，跳过")
+            return False
+
+    play_ctrl = player.locator(".vjs-play-control")
+    if await play_ctrl.count() > 0:
+        await play_ctrl.first.hover()
+
+    await ended.first.wait_for(state="attached", timeout=timeout)
+    print(video_complete_message(label))
+    return True
+
+
 async def video(page: Page) -> bool:
     """播放视频并跳转到下一节。返回 True 表示处理了视频页面。"""
     # 快速检查主页面是否包含视频播放器相关 iframe
@@ -13,27 +98,7 @@ async def video(page: Page) -> bool:
 
     player = outer.frame_locator("iframe").first
 
-    play_btn = player.locator(".vjs-big-play-button")
-    ended = player.locator(".vjs-ended")
-
-    try:
-        await play_btn.first.wait_for(state="attached", timeout=3000)
-        await play_btn.click()
-        print("视频开始播放")
-
-        play_ctrl = player.locator(".vjs-play-control")
-        if await play_ctrl.count() > 0:
-            await play_ctrl.hover()
-
-        await ended.wait_for(state="attached", timeout=1_750_000)
-        print("视频播放完成")
-
-    except TimeoutError:
-        try:
-            await ended.first.wait_for(state="attached", timeout=3000)
-            print("视频已完成")
-        except TimeoutError:
-            print("未检测到视频播放器，跳过")
+    handled = await play_player(player)
 
     next_btn = page.locator("#prevNextFocusNext")
     if await next_btn.count() > 0 and await next_btn.is_visible():
@@ -42,4 +107,4 @@ async def video(page: Page) -> bool:
         print("已点击下一节")
         return True
 
-    return False
+    return handled

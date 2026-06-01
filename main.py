@@ -1,7 +1,7 @@
 import asyncio
 from playwright.async_api import async_playwright
 import auto_sign_in
-import auto_video
+import auto_course
 import auto_answer
 
 
@@ -13,7 +13,7 @@ async def main():
         page = await auto_sign_in.sign_in(context)
 
         try:
-            await auto_video.video(page)
+            await auto_course.complete_course_videos(page)
         except Exception as e:
             print(f"视频模块跳过: {e}")
 
