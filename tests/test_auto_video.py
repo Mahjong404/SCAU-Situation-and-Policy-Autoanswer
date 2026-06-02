@@ -22,6 +22,16 @@ class AutoVideoHelperTests(unittest.TestCase):
             "已完成视频播放",
         )
 
+    def test_note_tip_text_requires_video_timestamp_hint(self):
+        self.assertTrue(
+            auto_video.is_note_tip_text("可边看边记，笔记会标记视频时间点")
+        )
+        self.assertTrue(
+            auto_video.is_note_tip_text("  可边看边记，笔记会标记视频时间点\n")
+        )
+        self.assertFalse(auto_video.is_note_tip_text("其他提示"))
+        self.assertFalse(auto_video.is_note_tip_text(""))
+
 
 if __name__ == "__main__":
     unittest.main()

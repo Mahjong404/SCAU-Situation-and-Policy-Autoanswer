@@ -11,6 +11,37 @@ def video_complete_message(label: str | None) -> str:
     return f"已完成{label}视频播放" if label else "已完成视频播放"
 
 
+def is_note_tip_text(text: str | None) -> bool:
+    return (text or "").strip() == "可边看边记，笔记会标记视频时间点"
+
+
+async def _dismiss_note_tip(player) -> bool:
+    boxes = player.locator("div.writeNote_vid_box")
+    count = await boxes.count()
+    for i in range(count):
+        box = boxes.nth(i)
+        tip = box.locator("div.writeNote_vid_text").first
+        if await tip.count() == 0:
+            continue
+
+        tip_text = await tip.text_content()
+        if not is_note_tip_text(tip_text):
+            continue
+
+        button = box.locator("a.writeNote_vid_blue", has_text="知道了").first
+        if await button.count() == 0:
+            continue
+
+        try:
+            await button.click(timeout=3000)
+            print("已关闭: 记笔记提示")
+            return True
+        except TimeoutError:
+            return False
+
+    return False
+
+
 async def _set_double_speed(player) -> bool:
     speed_btn = player.locator("button.vjs-playback-rate, .vjs-playback-rate").first
     try:
@@ -65,6 +96,7 @@ async def play_player(player, timeout: int = 1_750_000, label: str | None = None
 
     try:
         await play_btn.first.wait_for(state="visible", timeout=5000)
+        await _dismiss_note_tip(player)
         await play_btn.first.click()
         print("视频开始播放")
         await _configure_player(player)
