@@ -219,3 +219,5 @@ __marimo__/
 
 /real_data
 fuzzy_matches.txt
+CLAUDE.md
+tests/
