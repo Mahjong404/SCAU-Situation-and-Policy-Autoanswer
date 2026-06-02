@@ -6,6 +6,13 @@ def is_double_speed_text(text: str | None) -> bool:
     return text in {"2x", "2.0x", "2倍", "2.0倍"}
 
 
+def is_double_speed_rate(rate) -> bool:
+    try:
+        return float(rate) >= 1.95
+    except (TypeError, ValueError):
+        return False
+
+
 def video_complete_message(label: str | None) -> str:
     label = (label or "").strip()
     return f"已完成{label}视频播放" if label else "已完成视频播放"
@@ -42,7 +49,27 @@ async def _dismiss_note_tip(player) -> bool:
     return False
 
 
+async def _is_player_double_speed(player) -> bool:
+    video = player.locator("video").first
+    if await video.count() > 0:
+        rate = await video.evaluate("el => el.playbackRate")
+        if is_double_speed_rate(rate):
+            return True
+
+    speed_btn = player.locator("button.vjs-playback-rate, .vjs-playback-rate").first
+    if await speed_btn.count() > 0:
+        text = await speed_btn.text_content()
+        if is_double_speed_text(text):
+            return True
+
+    return False
+
+
 async def _set_double_speed(player) -> bool:
+    if await _is_player_double_speed(player):
+        print("已是2倍速")
+        return True
+
     speed_btn = player.locator("button.vjs-playback-rate, .vjs-playback-rate").first
     try:
         await speed_btn.wait_for(state="visible", timeout=5000)
@@ -60,6 +87,16 @@ async def _set_double_speed(player) -> bool:
             await item.click(timeout=3000)
             print("已设置: 2倍速")
             return True
+
+    if await _is_player_double_speed(player):
+        print("已是2倍速")
+        return True
+
+    video = player.locator("video").first
+    if await video.count() > 0:
+        await video.evaluate("el => el.playbackRate = 2")
+        print("已设置: 2倍速")
+        return True
 
     print("未找到2倍速选项")
     return False
