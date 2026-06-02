@@ -1,16 +1,7 @@
-import json
-from pathlib import Path
 from playwright.async_api import BrowserContext, Page
 
 
-BASE_DIR = Path(__file__).parent
-ACCOUNT_PATH = BASE_DIR / "real_data" / "account.json"
-
-
-async def sign_in(context: BrowserContext) -> Page:
-    with open(ACCOUNT_PATH, "r", encoding="utf-8") as f:
-        account = json.load(f)
-
+async def sign_in(context: BrowserContext, account: dict) -> Page:
     page = await context.new_page()
 
     await page.add_init_script("""

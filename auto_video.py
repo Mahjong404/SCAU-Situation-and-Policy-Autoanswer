@@ -1,16 +1,31 @@
 from playwright.async_api import Page, TimeoutError
 
 
-def is_double_speed_text(text: str | None) -> bool:
+def is_target_speed_text(text: str | None, speed: float = 2.0) -> bool:
     text = (text or "").strip().lower().replace(" ", "")
-    return text in {"2x", "2.0x", "2倍", "2.0倍"}
+    speed_texts = {f"{speed:g}", f"{speed:.1f}"}
+    return text in {
+        f"{speed_text}x"
+        for speed_text in speed_texts
+    } | {
+        f"{speed_text}倍"
+        for speed_text in speed_texts
+    }
+
+
+def is_double_speed_text(text: str | None) -> bool:
+    return is_target_speed_text(text, 2.0)
+
+
+def is_target_speed_rate(rate, speed: float = 2.0) -> bool:
+    try:
+        return abs(float(rate) - float(speed)) <= 0.05
+    except (TypeError, ValueError):
+        return False
 
 
 def is_double_speed_rate(rate) -> bool:
-    try:
-        return float(rate) >= 1.95
-    except (TypeError, ValueError):
-        return False
+    return is_target_speed_rate(rate, 2.0)
 
 
 def video_complete_message(label: str | None) -> str:
@@ -49,25 +64,25 @@ async def _dismiss_note_tip(player) -> bool:
     return False
 
 
-async def _is_player_double_speed(player) -> bool:
+async def _is_player_target_speed(player, speed: float) -> bool:
     video = player.locator("video").first
     if await video.count() > 0:
         rate = await video.evaluate("el => el.playbackRate")
-        if is_double_speed_rate(rate):
+        if is_target_speed_rate(rate, speed):
             return True
 
     speed_btn = player.locator("button.vjs-playback-rate, .vjs-playback-rate").first
     if await speed_btn.count() > 0:
         text = await speed_btn.text_content()
-        if is_double_speed_text(text):
+        if is_target_speed_text(text, speed):
             return True
 
     return False
 
 
-async def _set_double_speed(player) -> bool:
-    if await _is_player_double_speed(player):
-        print("已是2倍速")
+async def _set_playback_speed(player, speed: float) -> bool:
+    if await _is_player_target_speed(player, speed):
+        print(f"已是{speed:g}倍速")
         return True
 
     speed_btn = player.locator("button.vjs-playback-rate, .vjs-playback-rate").first
@@ -83,26 +98,34 @@ async def _set_double_speed(player) -> bool:
     for i in range(count):
         item = menu_items.nth(i)
         text = await item.text_content()
-        if is_double_speed_text(text):
+        if is_target_speed_text(text, speed):
             await item.click(timeout=3000)
-            print("已设置: 2倍速")
+            print(f"已设置: {speed:g}倍速")
             return True
 
-    if await _is_player_double_speed(player):
-        print("已是2倍速")
+    if await _is_player_target_speed(player, speed):
+        print(f"已是{speed:g}倍速")
         return True
 
     video = player.locator("video").first
     if await video.count() > 0:
-        await video.evaluate("el => el.playbackRate = 2")
-        print("已设置: 2倍速")
-        return True
+        actual_rate = await video.evaluate(
+            "(el, rate) => { el.playbackRate = rate; return el.playbackRate; }",
+            speed,
+        )
+        if is_target_speed_rate(actual_rate, speed):
+            print(f"已设置: {speed:g}倍速")
+            return True
 
-    print("未找到2倍速选项")
+    print(f"未能设置{speed:g}倍速，继续播放")
     return False
 
 
-async def _mute_player(player) -> bool:
+async def _mute_player(player, mute: bool) -> bool:
+    if not mute:
+        print("设置为非静音播放")
+        return True
+
     mute_btn = player.locator("button.vjs-mute-control").first
     try:
         await mute_btn.wait_for(state="visible", timeout=5000)
@@ -121,12 +144,13 @@ async def _mute_player(player) -> bool:
     return True
 
 
-async def _configure_player(player) -> None:
-    await _set_double_speed(player)
-    await _mute_player(player)
+async def _configure_player(player, speed: float, mute: bool) -> None:
+    await _set_playback_speed(player, speed)
+    await _mute_player(player, mute)
 
 
-async def play_player(player, timeout: int = 1_750_000, label: str | None = None) -> bool:
+async def play_player(player, timeout: int = 1_750_000, label: str | None = None,
+                      speed: float = 2.0, mute: bool = True) -> bool:
     """播放一个视频播放器 iframe。返回 True 表示检测到并处理了播放器。"""
     play_btn = player.locator(".vjs-big-play-button")
     ended = player.locator(".vjs-ended")
@@ -136,7 +160,7 @@ async def play_player(player, timeout: int = 1_750_000, label: str | None = None
         await _dismiss_note_tip(player)
         await play_btn.first.click()
         print("视频开始播放")
-        await _configure_player(player)
+        await _configure_player(player, speed, mute)
     except TimeoutError:
         try:
             await ended.first.wait_for(state="attached", timeout=3000)
@@ -155,7 +179,7 @@ async def play_player(player, timeout: int = 1_750_000, label: str | None = None
     return True
 
 
-async def video(page: Page) -> bool:
+async def video(page: Page, speed: float = 2.0, mute: bool = True) -> bool:
     """播放视频并跳转到下一节。返回 True 表示处理了视频页面。"""
     # 快速检查主页面是否包含视频播放器相关 iframe
     outer = page.frame_locator("iframe").first
@@ -167,7 +191,7 @@ async def video(page: Page) -> bool:
 
     player = outer.frame_locator("iframe").first
 
-    handled = await play_player(player)
+    handled = await play_player(player, speed=speed, mute=mute)
 
     next_btn = page.locator("#prevNextFocusNext")
     if await next_btn.count() > 0 and await next_btn.is_visible():

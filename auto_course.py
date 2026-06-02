@@ -58,7 +58,8 @@ async def find_next_unfinished_catalog_item(page: Page):
     return None
 
 
-async def _complete_videos_in_frame(outer_frame, catalog_title: str) -> int:
+async def _complete_videos_in_frame(outer_frame, catalog_title: str,
+                                    speed: float, mute: bool) -> int:
     blocks = outer_frame.locator("p:has(iframe)")
     count = await blocks.count()
     completed = 0
@@ -75,13 +76,19 @@ async def _complete_videos_in_frame(outer_frame, catalog_title: str) -> int:
             continue
 
         video_label = f"{catalog_title} 第{i + 1}个"
-        if await auto_video.play_player(iframe.content_frame, label=video_label):
+        if await auto_video.play_player(
+            iframe.content_frame,
+            label=video_label,
+            speed=speed,
+            mute=mute,
+        ):
             completed += 1
 
     return completed
 
 
-async def complete_videos_in_current_item(page: Page, catalog_title: str) -> int:
+async def complete_videos_in_current_item(page: Page, catalog_title: str,
+                                          speed: float, mute: bool) -> int:
     outer_iframes = page.locator("iframe")
     count = await outer_iframes.count()
     completed = 0
@@ -92,6 +99,8 @@ async def complete_videos_in_current_item(page: Page, catalog_title: str) -> int
             completed += await _complete_videos_in_frame(
                 iframe.content_frame,
                 catalog_title,
+                speed,
+                mute,
             )
         except TimeoutError:
             continue
@@ -99,7 +108,8 @@ async def complete_videos_in_current_item(page: Page, catalog_title: str) -> int
     return completed
 
 
-async def complete_course_videos(page: Page, max_rounds: int = 100) -> int:
+async def complete_course_videos(page: Page, speed: float = 2.0,
+                                 mute: bool = True, max_rounds: int = 100) -> int:
     total_completed = 0
 
     for _ in range(max_rounds):
@@ -114,7 +124,7 @@ async def complete_course_videos(page: Page, max_rounds: int = 100) -> int:
         await item.click()
         await page.wait_for_timeout(2000)
 
-        completed = await complete_videos_in_current_item(page, title)
+        completed = await complete_videos_in_current_item(page, title, speed, mute)
         total_completed += completed
 
         if completed == 0:
