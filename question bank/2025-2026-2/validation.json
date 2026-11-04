@@ -1,0 +1,12 @@
+{
+  "term": "2025-2026-2",
+  "question_count": 60,
+  "type_counts": {
+    "单选题": 25,
+    "多选题": 20,
+    "判断题": 15
+  },
+  "format_valid": true,
+  "pending_count": 0,
+  "answer_semantics_verified": false
+}

@@ -1,0 +1,13 @@
+# Keep screenshots and source evidence local.
+**/images/
+**/sources/
+**/ocr/
+**/ocr-tiles/
+**/ocr-input/
+**/review-crops/
+**/transcriptions/
+**/records.json
+**/images.json
+**/review.json
+**/duplicates.json
+**/llm-suggestions.json

@@ -1,0 +1,21 @@
+{
+  "updated": "2026-11-04",
+  "terms": [
+    {
+      "term": "2025-2026-2",
+      "image_count": 18,
+      "ready_questions": 60,
+      "pending_questions": 0,
+      "questions": "2025-2026-2/questions.json",
+      "validation": "2025-2026-2/validation.json"
+    },
+    {
+      "term": "2026-2027-1",
+      "image_count": 19,
+      "ready_questions": 69,
+      "pending_questions": 1,
+      "questions": "2026-2027-1/questions.json",
+      "validation": "2026-2027-1/validation.json"
+    }
+  ]
+}

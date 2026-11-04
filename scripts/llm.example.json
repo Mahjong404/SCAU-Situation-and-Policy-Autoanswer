@@ -1,0 +1,6 @@
+{
+  "endpoint": "",
+  "model": "",
+  "api_key": "",
+  "api_key_env": "QUESTION_BANK_LLM_API_KEY"
+}

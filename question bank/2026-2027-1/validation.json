@@ -1,0 +1,12 @@
+{
+  "term": "2026-2027-1",
+  "question_count": 69,
+  "type_counts": {
+    "单选题": 30,
+    "多选题": 19,
+    "判断题": 20
+  },
+  "format_valid": true,
+  "pending_count": 1,
+  "answer_semantics_verified": false
+}
